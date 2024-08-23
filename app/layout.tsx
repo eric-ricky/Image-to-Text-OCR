@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
@@ -21,6 +22,8 @@ export default function RootLayout({
         {children}
         <Toaster />
       </body>
+
+      <GoogleAnalytics gaId="G-785706PNMD" />
     </html>
   );
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Tesseract from "tesseract.js";
+import { createWorker } from "tesseract.js";
 
 export async function POST(req: Request) {
   try {
@@ -13,9 +13,12 @@ export async function POST(req: Request) {
         { status: 400 }
       );
 
-    const ocrResult = await Tesseract.recognize(file.imageData, "eng", {
-      workerPath: "./tesseract.js/src/worker-script/node/index.js",
-    });
+    const worker = await createWorker("eng");
+    const ocrResult = await worker.recognize(file.imageData);
+
+    // const ocrResult = await Tesseract.recognize(file.imageData, "eng", {
+    //   workerPath: "./tesseract.js/src/worker-script/node/index.js",
+    // });
     const content = ocrResult.data.text;
 
     return NextResponse.json({

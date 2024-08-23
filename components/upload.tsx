@@ -1,7 +1,6 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import axios from "axios";
 import {
   CheckCheck,
   Copy,
@@ -14,6 +13,7 @@ import {
 import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useDropzone } from "react-dropzone";
+import { createWorker } from "tesseract.js";
 import FileIcon from "./icons/file";
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
@@ -28,6 +28,9 @@ interface IResultData extends IFileData {
 }
 
 const UploadComponent = () => {
+  const [progress, setProgress] = useState(0);
+  const [activeFile, setActiveFile] = useState<IFileData>();
+
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<IResultData[]>([]);
   const [files, setFiles] = useState<IFileData[]>([]);
@@ -58,27 +61,27 @@ const UploadComponent = () => {
     },
   });
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  // const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  //   e.preventDefault();
 
-    if (!files.length) return console.log("NO FILES SELECTED");
+  //   if (!files.length) return console.log("NO FILES SELECTED");
 
-    try {
-      setLoading(true);
+  //   try {
+  //     setLoading(true);
 
-      for (const file of files) {
-        const res = await axios.post("/api/convert", {
-          file,
-        });
-        const data: IResultData = res.data.data;
-        setResults((prev) => [...prev, data]);
-      }
-    } catch (error) {
-      console.log("ERROR ===>", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  //     for (const file of files) {
+  //       const res = await axios.post("/api/convert", {
+  //         file,
+  //       });
+  //       const data: IResultData = res.data.data;
+  //       setResults((prev) => [...prev, data]);
+  //     }
+  //   } catch (error) {
+  //     console.log("ERROR ===>", error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   const handleCopyAll = () => {
     if (!results.length) return;
@@ -95,6 +98,58 @@ const UploadComponent = () => {
   const handleReset = () => {
     setFiles([]);
     setResults([]);
+  };
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!files.length) return console.log("NO FILES SELECTED");
+
+    try {
+      setLoading(true);
+
+      console.log("STARTING.....");
+      const worker = await createWorker("eng", 1, {
+        logger: (m) => {
+          console.log("MESSAGE ===>", m);
+          if (m.status === "recognizing text")
+            setProgress(Math.floor(m.progress * 100));
+        },
+      });
+
+      console.log(`WORKER READY.... EXTRACTING TEXT FROM ${files[0].name}`);
+
+      for (const file of files) {
+        setActiveFile(file);
+
+        const initialData: IResultData = { ...file, content: "" };
+        setResults((prev) =>
+          !prev.length
+            ? [initialData]
+            : [...prev.filter((p) => p.name !== file.name), initialData]
+        );
+        const {
+          data: { text },
+        } = await worker.recognize(file.imageData);
+        console.log("TEXT =====>", text);
+        const data: IResultData = {
+          ...file,
+          content: text,
+        };
+        setResults((prev) => [
+          ...prev.map((p) => (p.name === file.name ? { ...data } : p)),
+        ]);
+      }
+
+      setActiveFile(undefined);
+      setProgress(0);
+      await worker.terminate();
+      console.log("DONE.....");
+    } catch (error) {
+      console.log("ERROR EXTRACTING ===>", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -219,11 +274,20 @@ const UploadComponent = () => {
             <h2 className="font-medium">Result ({results.length})</h2>
 
             <div className="flex-1 flex items-center justify-end gap-4">
-              <Button onClick={handleReset} size={"sm"} variant={"outline"}>
+              <Button
+                disabled={!!progress}
+                onClick={handleReset}
+                size={"sm"}
+                variant={"outline"}
+              >
                 <ListRestart size={20} className="mr-2" />
                 <span className="hidden md:flex">Reset</span>
               </Button>
-              <Button disabled={copiedAll} onClick={handleCopyAll} size={"sm"}>
+              <Button
+                disabled={!!progress || copiedAll}
+                onClick={handleCopyAll}
+                size={"sm"}
+              >
                 {copiedAll ? (
                   <>
                     <CheckCheck size={20} className="mr-2" />
@@ -249,7 +313,7 @@ const UploadComponent = () => {
                 return (
                   <div
                     key={index}
-                    className="border rounded-xl p-2 flex items-center gap-2"
+                    className="border rounded-xl overflow-hidden p-2 flex items-center gap-2 relative"
                   >
                     <div className="relative w-20 h-20 border  rounded-xl overflow-hidden">
                       <Image
@@ -270,38 +334,71 @@ const UploadComponent = () => {
                       </div>
                     </div>
 
-                    <div className="flex flex-col h-full p-1">
-                      <Button
-                        disabled={isCopied}
-                        onClick={() => {
-                          navigator.clipboard.writeText(result.content);
-                          setCopiedResult(result);
+                    {result.content && (
+                      <div className="flex flex-col h-full p-1">
+                        <Button
+                          disabled={isCopied}
+                          onClick={() => {
+                            navigator.clipboard.writeText(result.content);
+                            setCopiedResult(result);
 
-                          setTimeout(() => {
-                            setCopiedResult(undefined);
-                          }, 2000);
-                        }}
-                        size={"sm"}
-                        variant={"ghost"}
-                        className="bg-white"
-                      >
-                        {isCopied ? (
-                          <CheckCheck size={14} />
-                        ) : (
-                          <Copy size={14} />
-                        )}
-                      </Button>
+                            setTimeout(() => {
+                              setCopiedResult(undefined);
+                            }, 2000);
+                          }}
+                          size={"sm"}
+                          variant={"ghost"}
+                          className="bg-white"
+                        >
+                          {isCopied ? (
+                            <CheckCheck size={14} />
+                          ) : (
+                            <Copy size={14} />
+                          )}
+                        </Button>
 
-                      <Button size={"sm"} variant={"ghost"} className="hidden">
-                        <Download size={14} />
-                      </Button>
-                    </div>
+                        <Button
+                          size={"sm"}
+                          variant={"ghost"}
+                          className="hidden"
+                        >
+                          <Download size={14} />
+                        </Button>
+                      </div>
+                    )}
+
+                    {activeFile?.name === result.name && (
+                      <div className="absolute bottom-0 left-0 col-span-2 w-full bg-slate-200">
+                        <div>
+                          <span id="ProgressLabel" className="sr-only">
+                            Loading
+                          </span>
+
+                          <span
+                            role="progressbar"
+                            aria-labelledby="ProgressLabel"
+                            aria-valuenow={progress}
+                            className="block rounded-full bg-gray-200"
+                          >
+                            <span
+                              className="block h-4 rounded-full bg-indigo-600 text-center text-[10px]/4"
+                              style={{ width: `${progress}%` }}
+                            >
+                              <span className="font-bold text-white">
+                                {" "}
+                                {progress}%{" "}
+                              </span>
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            {results.length !== files.length && (
+            {/* {results.length !== files.length && (
               <div className="flex items-center justify-center p-10">
                 <div className="flex items-center space-x-2 text-indigo-600">
                   <Loader className="animate-spin" />
@@ -309,7 +406,7 @@ const UploadComponent = () => {
                   <span className="font-medium text-sm">Loading...</span>
                 </div>
               </div>
-            )}
+            )} */}
           </div>
         </div>
       )}

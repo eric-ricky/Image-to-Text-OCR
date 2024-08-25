@@ -111,7 +111,7 @@ const UploadComponent = () => {
       console.log("STARTING.....");
       const worker = await createWorker("eng", 1, {
         logger: (m) => {
-          console.log("MESSAGE ===>", m);
+          // console.log("MESSAGE ===>", m);
           if (m.status === "recognizing text")
             setProgress(Math.floor(m.progress * 100));
         },
